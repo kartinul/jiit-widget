@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import android.widget.RemoteViews
+import com.github.kartinul.jiit_widget.Utils.isOnline
 import com.google.gson.Gson
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -32,8 +33,8 @@ private object MenuCache {
     }
 
     fun set(response: MenuResponse?) {
-        response?.let {
-            menuResponse = it
+        if (response != null) {
+            menuResponse = response
             lastFetchTime = System.currentTimeMillis()
         }
     }
@@ -141,7 +142,8 @@ internal fun updateAppWidget(
         }
     }
 
-    if (menuResponse == null) {
+    val isTodayMenuExist = MenuCache.menuResponse?.menu[getTodayDataKey(0)] != null
+    if (menuResponse == null || !isTodayMenuExist) {
         widgetText = "Couldn't find weekly menu"
     }
     else if (widgetText == null) {
