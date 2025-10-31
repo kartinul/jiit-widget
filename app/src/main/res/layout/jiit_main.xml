@@ -10,15 +10,15 @@
         android:id="@+id/time_of_meal"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
         android:layout_above="@+id/mess_menu"
         android:layout_marginBottom="2dp"
-        android:layout_centerHorizontal="true"
         android:text="@string/time_of_meal"
         android:textSize="17sp"
         android:textColor="?android:textColorPrimary"
         android:textStyle="bold" />
 
-    <TextView
+   <TextView
         android:id="@+id/mess_menu"
         style="@style/Widget.Jiit_widget.AppWidget.InnerView"
         android:layout_width="wrap_content"
@@ -34,12 +34,19 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_alignParentEnd="true"
-    android:contentDescription="refresh menu"
+    android:contentDescription="@string/refresh_menu"
     android:layout_alignParentBottom="true"
     android:layout_marginEnd="3dp"
     android:layout_marginBottom="3dp"
     android:src="@android:drawable/ic_menu_search"
     android:scaleType="centerInside"/>
+
+<!--    <ListView-->
+<!--        android:id="@+id/menu_list"-->
+<!--        android:layout_width="wrap_content"-->
+<!--        android:layout_centerHorizontal="true"-->
+<!--        android:layout_centerVertical="true"-->
+<!--        android:layout_height="100dp" />-->
 
 
 </RelativeLayout>

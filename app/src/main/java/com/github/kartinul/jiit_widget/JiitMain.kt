@@ -9,13 +9,15 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import android.widget.RemoteViews
-import com.github.kartinul.jiit_widget.Utils.isOnline
+import com.example.yourapp.WidgetScheduler
 import com.google.gson.Gson
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -24,18 +26,25 @@ private const val ACTION_WIDGET_REFETCH = "com.github.kartinul.jiit_widget.SEARC
 
 private object MenuCache {
     var menuResponse: MenuResponse? = null
-    var lastFetchTime: Long = 0
-    private const val CACHE_DURATION_MS = 2 * 60 * 60 * 1000L
+    var weekEndTime: Long = 0
 
     fun isValid(): Boolean {
         val isTodayMenuExist = menuResponse?.menu[getTodayDataKey(0)] != null
-        return isTodayMenuExist && (System.currentTimeMillis() - lastFetchTime) < CACHE_DURATION_MS
+        val isCacheValid = System.currentTimeMillis() < weekEndTime
+        return isTodayMenuExist && isCacheValid
     }
 
     fun set(response: MenuResponse?) {
         if (response != null) {
             menuResponse = response
-            lastFetchTime = System.currentTimeMillis()
+
+            val lastMenuDate = response.menu.keys.maxOfOrNull { key ->
+                val formatter = DateTimeFormatter.ofPattern("EEEE dd.MM.yy", Locale.ENGLISH)
+                LocalDate.parse(key, formatter)
+            }
+            if (lastMenuDate != null) {
+                weekEndTime = lastMenuDate.atTime(LocalTime.MAX).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
         }
     }
 }
@@ -47,11 +56,13 @@ class JiitMain : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        for (appWidgetId in appWidgetIds) {
-            updateAppWidget(context, appWidgetManager, appWidgetId, MenuCache.menuResponse)
-        }
 
-        if (!MenuCache.isValid()) {
+        if (MenuCache.isValid()) {
+            for (appWidgetId in appWidgetIds) {
+                updateAppWidget(context, appWidgetManager, appWidgetId, MenuCache.menuResponse)
+            }
+        }
+        else {
             fetchMessMenu { menuResponse ->
                 MenuCache.set(menuResponse)
                 for (appWidgetId in appWidgetIds) {
@@ -59,26 +70,18 @@ class JiitMain : AppWidgetProvider() {
                 }
             }
         }
+
+        WidgetScheduler.scheduleNextUpdate(context)
     }
 
     override fun onEnabled(context: Context) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pendingIntent = getRefreshPendingIntent(context)
-
-        alarmManager.setRepeating(
-            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-            SystemClock.elapsedRealtime() + 60000,
-            60000,
-            pendingIntent
-        )
-        Log.d("JiitMain", "Widget alarm has been set.")
+        super.onEnabled(context)
+        WidgetScheduler.scheduleNextUpdate(context)
     }
 
     override fun onDisabled(context: Context) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pendingIntent = getRefreshPendingIntent(context)
-        alarmManager.cancel(pendingIntent)
-        Log.d("JiitMain", "Widget alarm has been canceled.")
+        super.onDisabled(context)
+        WidgetScheduler.cancelUpdates(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -90,6 +93,7 @@ class JiitMain : AppWidgetProvider() {
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val componentName = android.content.ComponentName(context, JiitMain::class.java)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+
                 onUpdate(context, appWidgetManager, appWidgetIds)
             }
             ACTION_WIDGET_REFETCH -> {
@@ -103,16 +107,7 @@ class JiitMain : AppWidgetProvider() {
                 }
             }
         }
-
     }
-
-    private fun getRefreshPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, JiitMain::class.java).apply {
-            action = ACTION_WIDGET_RELOAD
-        }
-        return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    }
-
 }
 
 internal fun updateAppWidget(
@@ -142,6 +137,7 @@ internal fun updateAppWidget(
         }
     }
 
+
     val isTodayMenuExist = MenuCache.menuResponse?.menu[getTodayDataKey(0)] != null
     if (menuResponse == null || !isTodayMenuExist) {
         widgetText = "Couldn't find weekly menu"
@@ -150,7 +146,6 @@ internal fun updateAppWidget(
         widgetText = "Couldn't find current menu"
     }
 
-    // Construct the RemoteViews object
     views.setTextViewText(R.id.mess_menu, widgetText)
     views.setTextViewText(R.id.time_of_meal, timeOfMeal)
 
