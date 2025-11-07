@@ -7,7 +7,6 @@ object Constants {
     const val UPCOMING_BREAKFAST = "Tomorrow's Breakfast"
 
     const val BREAKFAST_HOUR_END = 9
-    const val LUNCH_HOUR_END = 14 // 2 PM
-    const val DINNER_HOUR_END = 21 // 9 PM
-    const val DINNER_MINUTE_END = 30
+    const val LUNCH_HOUR_END = 2 + 12 // 2 PM
+    const val DINNER_HOUR_END = 9 + 12 // 9 PM
 }
