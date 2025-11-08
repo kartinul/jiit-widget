@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.RemoteViews
+import androidx.core.content.edit
 import com.google.gson.Gson
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -35,29 +36,72 @@ private object MenuCache {
     var menuResponse: MenuResponse? = null
     var weekEndTime: Long = 0
 
-    fun isValid(): Boolean {
+    fun isValid(context: Context): Boolean {
+        val now = System.currentTimeMillis()
+        val prefs =
+            context.applicationContext.getSharedPreferences(
+                "jiit_widget_prefs",
+                Context.MODE_PRIVATE
+            )
+
+        val expiryFromPrefs = prefs.getLong("cached_menu_expiry", 0)
+        val expiryTime = if (weekEndTime > 0) weekEndTime else expiryFromPrefs
+
+        val stillValid = now < expiryTime
+
+        if (!stillValid) {
+            prefs.edit(commit = true) {
+                remove("cached_menu_json")
+                remove("cached_menu_expiry")
+            }
+            menuResponse = null
+            weekEndTime = 0
+
+            return false
+        }
+
         val todayKey = getTodayDataKey(0)
-        val hasTodayMenu = menuResponse?.menu?.get(todayKey) != null
-        val stillValid = System.currentTimeMillis() < weekEndTime
-        return hasTodayMenu && stillValid
+        val hasTodayMenu = menuResponse?.menu?.containsKey(todayKey) == true
+
+        return hasTodayMenu
     }
 
-    fun set(response: MenuResponse?) {
+    fun set(response: MenuResponse?, context: Context) {
         if (response == null) return
 
         menuResponse = response
-        val formatter = DateTimeFormatter.ofPattern("EEEE dd.MM.yy", Locale.ENGLISH)
 
-        val lastDate = response.menu.keys.maxOfOrNull {
-            LocalDate.parse(it, formatter)
+        val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yy", Locale.ENGLISH)
+
+        // find the latest date from all keys
+        val lastDate =
+            response.menu.keys
+                .mapNotNull { key ->
+                    val datePart = key.substringAfter(" ").trim()
+                    LocalDate.parse(datePart, dateFormatter)
+                }
+                .maxOrNull()
+
+        if (lastDate != null) {
+            weekEndTime =
+                lastDate
+                    .atTime(LocalTime.MAX)
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
         }
 
-        lastDate?.let {
-            weekEndTime = it.atTime(LocalTime.MAX)
-                .atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
+        val json = Gson().toJson(response)
+        val prefs =
+            context.applicationContext.getSharedPreferences(
+                "jiit_widget_prefs",
+                Context.MODE_PRIVATE
+            )
+        prefs.edit(commit = true) {
+            putString("cached_menu_json", json)
+            putLong("cached_menu_expiry", weekEndTime)
         }
+
     }
 }
 
@@ -66,11 +110,28 @@ private object MenuCache {
 // -----------------------------------------------------------------------------
 class JiitMain : AppWidgetProvider() {
 
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
         Log.d("JiitMain", "onUpdate called")
 
+        if (MenuCache.menuResponse == null) {
+            val prefs =
+                context.applicationContext.getSharedPreferences(
+                    "jiit_widget_prefs",
+                    Context.MODE_PRIVATE
+                )
+            prefs.getString("cached_menu_json", null)?.let { json ->
+                val cached = Gson().fromJson(json, MenuResponse::class.java)
+                MenuCache.set(cached, context)
+                Log.d("WidgetCache", "Restored cache in onUpdate()")
+            }
+        }
+
         val updateViews: (MenuResponse?) -> Unit = { menu ->
-            MenuCache.set(menu)
+            MenuCache.set(menu, context)
             Handler(Looper.getMainLooper()).post {
                 for (id in appWidgetIds) {
                     updateAppWidget(context, appWidgetManager, id, MenuCache.menuResponse)
@@ -78,7 +139,7 @@ class JiitMain : AppWidgetProvider() {
             }
         }
 
-        if (MenuCache.isValid()) {
+        if (MenuCache.isValid(context)) {
             updateViews(MenuCache.menuResponse)
         } else {
             fetchMessMenu(updateViews)
@@ -89,17 +150,15 @@ class JiitMain : AppWidgetProvider() {
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        Log.d("JiitMain", "Widget enabled")
-
         val appWidgetManager = AppWidgetManager.getInstance(context)
         val component = ComponentName(context, JiitMain::class.java)
         val appWidgetIds = appWidgetManager.getAppWidgetIds(component)
 
         fetchMessMenu { menu ->
-            MenuCache.set(menu)
+            MenuCache.set(menu, context)
             Handler(Looper.getMainLooper()).post {
                 for (id in appWidgetIds) {
-                    updateAppWidget(context, appWidgetManager, id, menu)
+                    updateAppWidget(context, appWidgetManager, id, MenuCache.menuResponse)
                 }
             }
         }
@@ -112,23 +171,22 @@ class JiitMain : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        val manager = AppWidgetManager.getInstance(context)
+        val component = ComponentName(context, JiitMain::class.java)
+        val ids = manager.getAppWidgetIds(component)
+
         when (intent.action) {
             ACTION_WIDGET_RELOAD -> {
-                Log.d("JiitMain", "Received scheduled refresh.")
-                val manager = AppWidgetManager.getInstance(context)
-                val component = ComponentName(context, JiitMain::class.java)
-                val ids = manager.getAppWidgetIds(component)
+                Log.d("JiitMain", "Reload clicked.")
                 for (id in ids) {
                     updateAppWidget(context, manager, id, MenuCache.menuResponse)
                 }
             }
+
             ACTION_WIDGET_REFETCH -> {
-                Log.d("JiitMain", "Manual refresh clicked.")
+                Log.d("JiitMain", "Refetch clicked")
                 fetchMessMenu { menu ->
-                    MenuCache.set(menu)
-                    val manager = AppWidgetManager.getInstance(context)
-                    val component = ComponentName(context, JiitMain::class.java)
-                    val ids = manager.getAppWidgetIds(component)
+                    MenuCache.set(menu, context)
                     Handler(Looper.getMainLooper()).post {
                         for (id in ids) {
                             updateAppWidget(context, manager, id, MenuCache.menuResponse)
@@ -143,24 +201,42 @@ class JiitMain : AppWidgetProvider() {
 // -----------------------------------------------------------------------------
 // UI + Logic
 // -----------------------------------------------------------------------------
-internal fun updateAppWidget(context: Context, manager: AppWidgetManager, id: Int, menu: MenuResponse?) {
+internal fun updateAppWidget(
+    context: Context,
+    manager: AppWidgetManager,
+    id: Int,
+    menuResponse: MenuResponse?
+) {
     val views = RemoteViews(context.packageName, R.layout.jiit_main)
     setupIntents(context, id, views)
 
     val todayKey = getTodayDataKey(0)
-    val todayMenu = menu?.menu?.get(todayKey)
+    val todayMenu = menuResponse?.menu?.get(todayKey)
     val timeOfMeal = getTimeOfMeal()
 
-    val widgetText = when (timeOfMeal) {
-        Constants.UPCOMING_BREAKFAST -> menu?.menu?.get(getTodayDataKey(1))?.breakfast
-        Constants.BREAKFAST -> todayMenu?.breakfast
-        Constants.LUNCH -> todayMenu?.lunch
-        Constants.DINNER -> todayMenu?.dinner
-        else -> null
-    } ?: if (todayMenu == null) {
-        "Couldn't find weekly menu"
+    var widgetText: String
+    if (menuResponse == null) {
+        val now = LocalTime.now()
+        val hour = now.hour
+        val minute = now.minute
+
+        widgetText = "null at Current time: $hour:$minute"
     } else {
-        "Couldn't find current menu"
+        widgetText =
+            when (timeOfMeal) {
+                Constants.UPCOMING_BREAKFAST ->
+                    menuResponse.menu[getTodayDataKey(1)]?.breakfast
+
+                Constants.BREAKFAST -> todayMenu?.breakfast
+                Constants.LUNCH -> todayMenu?.lunch
+                Constants.DINNER -> todayMenu?.dinner
+                else -> null
+            }
+                ?: if (todayMenu == null) {
+                    "Couldn't find today's menu"
+                } else {
+                    "Couldn't find timely menu"
+                }
     }
 
     views.setTextViewText(R.id.mess_menu, widgetText)
@@ -171,17 +247,24 @@ internal fun updateAppWidget(context: Context, manager: AppWidgetManager, id: In
 
 private fun setupIntents(context: Context, appWidgetId: Int, views: RemoteViews) {
     val reloadIntent = Intent(context, JiitMain::class.java).apply { action = ACTION_WIDGET_RELOAD }
-    val reloadPending = PendingIntent.getBroadcast(
-        context, appWidgetId, reloadIntent,
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
+    val reloadPending =
+        PendingIntent.getBroadcast(
+            context,
+            appWidgetId,
+            reloadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     views.setOnClickPendingIntent(R.id.widget_root, reloadPending)
 
-    val refetchIntent = Intent(context, JiitMain::class.java).apply { action = ACTION_WIDGET_REFETCH }
-    val refetchPending = PendingIntent.getBroadcast(
-        context, appWidgetId, refetchIntent,
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
+    val refetchIntent =
+        Intent(context, JiitMain::class.java).apply { action = ACTION_WIDGET_REFETCH }
+    val refetchPending =
+        PendingIntent.getBroadcast(
+            context,
+            appWidgetId,
+            refetchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     views.setOnClickPendingIntent(R.id.refresh_menu, refetchPending)
 }
 
@@ -207,7 +290,8 @@ private fun fetchMessMenu(onResult: (MenuResponse?) -> Unit) {
             Log.e("JiitMain", "Network fetch failed", e)
             onResult(null)
         }
-    }.start()
+    }
+        .start()
 }
 
 private fun getTimeOfMeal(): String {
@@ -222,7 +306,7 @@ private fun getTimeOfMeal(): String {
 
 private fun getTodayDataKey(daysToAdd: Long): String {
     val formatter = DateTimeFormatter.ofPattern("EEEE dd.MM.yy", Locale.ENGLISH)
-    return LocalDate.now().plusDays(daysToAdd)
-        .format(formatter)
-        .replaceFirstChar { it.titlecase(Locale.ENGLISH) }
+    return LocalDate.now().plusDays(daysToAdd).format(formatter).replaceFirstChar {
+        it.titlecase(Locale.ENGLISH)
+    }
 }
