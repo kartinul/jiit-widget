@@ -14,10 +14,10 @@ object WidgetScheduler {
 
     // Format: (hour, minute) — add/change these for your meal schedule
     private val updateTimes = listOf(
-        0 to 0, // midnight reset
-        Constants.BREAKFAST_HOUR_END to 0,
-        Constants.LUNCH_HOUR_END to 0,
-        Constants.DINNER_HOUR_END to 0
+        0 to 4, // midnight reset
+        Constants.BREAKFAST_HOUR_END to 4,
+        Constants.LUNCH_HOUR_END to 4,
+        Constants.DINNER_HOUR_END to 4
     )
 
     private const val ALARM_REQUEST_CODE = 999

@@ -11,10 +11,9 @@ import android.os.Looper
 import android.util.Log
 import android.widget.RemoteViews
 import androidx.core.content.edit
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.google.gson.Gson
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -27,12 +26,11 @@ import java.util.Locale
 // -----------------------------------------------------------------------------
 private const val ACTION_WIDGET_RELOAD = "com.github.kartinul.jiit_widget.ACTION_WIDGET_REFRESH"
 private const val ACTION_WIDGET_REFETCH = "com.github.kartinul.jiit_widget.ACTION_WIDGET_REFETCH"
-private const val MENU_URL = "https://jportal2-0.vercel.app/mess_menu.json"
 
 // -----------------------------------------------------------------------------
 // Cache
 // -----------------------------------------------------------------------------
-private object MenuCache {
+object MenuCache {
     var menuResponse: MenuResponse? = null
     var weekEndTime: Long = 0
 
@@ -117,32 +115,19 @@ class JiitMain : AppWidgetProvider() {
     ) {
         Log.d("JiitMain", "onUpdate called")
 
-        if (MenuCache.menuResponse == null) {
-            val prefs =
-                context.applicationContext.getSharedPreferences(
-                    "jiit_widget_prefs",
-                    Context.MODE_PRIVATE
-                )
-            prefs.getString("cached_menu_json", null)?.let { json ->
-                val cached = Gson().fromJson(json, MenuResponse::class.java)
-                MenuCache.set(cached, context)
-                Log.d("WidgetCache", "Restored cache in onUpdate()")
-            }
-        }
-
         val updateViews: (MenuResponse?) -> Unit = { menu ->
             MenuCache.set(menu, context)
             Handler(Looper.getMainLooper()).post {
                 for (id in appWidgetIds) {
-                    updateAppWidget(context, appWidgetManager, id, MenuCache.menuResponse)
+                    updateAppWidget(context, appWidgetManager, id)
                 }
             }
         }
 
         if (MenuCache.isValid(context)) {
-            updateViews(MenuCache.menuResponse)
+            updateViews(null)
         } else {
-            fetchMessMenu(updateViews)
+            fetchMessMenu(context)
         }
 
         WidgetScheduler.scheduleNextUpdate(context)
@@ -150,18 +135,8 @@ class JiitMain : AppWidgetProvider() {
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        val appWidgetManager = AppWidgetManager.getInstance(context)
-        val component = ComponentName(context, JiitMain::class.java)
-        val appWidgetIds = appWidgetManager.getAppWidgetIds(component)
 
-        fetchMessMenu { menu ->
-            MenuCache.set(menu, context)
-            Handler(Looper.getMainLooper()).post {
-                for (id in appWidgetIds) {
-                    updateAppWidget(context, appWidgetManager, id, MenuCache.menuResponse)
-                }
-            }
-        }
+        fetchMessMenu(context)
     }
 
     override fun onDisabled(context: Context) {
@@ -179,20 +154,13 @@ class JiitMain : AppWidgetProvider() {
             ACTION_WIDGET_RELOAD -> {
                 Log.d("JiitMain", "Reload clicked.")
                 for (id in ids) {
-                    updateAppWidget(context, manager, id, MenuCache.menuResponse)
+                    updateAppWidget(context, manager, id)
                 }
             }
 
             ACTION_WIDGET_REFETCH -> {
                 Log.d("JiitMain", "Refetch clicked")
-                fetchMessMenu { menu ->
-                    MenuCache.set(menu, context)
-                    Handler(Looper.getMainLooper()).post {
-                        for (id in ids) {
-                            updateAppWidget(context, manager, id, MenuCache.menuResponse)
-                        }
-                    }
-                }
+                fetchMessMenu(context)
             }
         }
     }
@@ -205,8 +173,22 @@ internal fun updateAppWidget(
     context: Context,
     manager: AppWidgetManager,
     id: Int,
-    menuResponse: MenuResponse?
 ) {
+    if (MenuCache.menuResponse == null) {
+        val prefs =
+            context.applicationContext.getSharedPreferences(
+                "jiit_widget_prefs",
+                Context.MODE_PRIVATE
+            )
+        prefs.getString("cached_menu_json", null)?.let { json ->
+            val cached = Gson().fromJson(json, MenuResponse::class.java)
+            MenuCache.set(cached, context)
+            Log.d("WidgetCache", "Restored cache in onUpdate()")
+        }
+    }
+
+    val menuResponse = MenuCache.menuResponse
+
     val views = RemoteViews(context.packageName, R.layout.jiit_main)
     setupIntents(context, id, views)
 
@@ -220,7 +202,7 @@ internal fun updateAppWidget(
         val hour = now.hour
         val minute = now.minute
 
-        widgetText = "null at Current time: $hour:$minute"
+        widgetText = "null at time: $hour:$minute"
     } else {
         widgetText =
             when (timeOfMeal) {
@@ -271,27 +253,9 @@ private fun setupIntents(context: Context, appWidgetId: Int, views: RemoteViews)
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-private fun fetchMessMenu(onResult: (MenuResponse?) -> Unit) {
-    Thread {
-        try {
-            val connection = URL(MENU_URL).openConnection() as HttpURLConnection
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                connection.inputStream.use { stream ->
-                    InputStreamReader(stream, Charsets.UTF_8).use { reader ->
-                        val response = Gson().fromJson(reader, MenuResponse::class.java)
-                        onResult(response)
-                    }
-                }
-            } else {
-                Log.e("JiitMain", "Failed: HTTP ${connection.responseCode}")
-                onResult(null)
-            }
-        } catch (e: Exception) {
-            Log.e("JiitMain", "Network fetch failed", e)
-            onResult(null)
-        }
-    }
-        .start()
+private fun fetchMessMenu(context: Context) {
+    val request = OneTimeWorkRequestBuilder<MenuFetchWorker>().build()
+    WorkManager.getInstance(context).enqueue(request)
 }
 
 private fun getTimeOfMeal(): String {
