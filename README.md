@@ -12,6 +12,3 @@ Adds a widget that allows you to see the current mess menu, your classes as per 
   - [ ] Have an upcoming class widget
 - [ ] Intergrate with JYC to display upcoming events
 - [ ] Intergrate with the UPCOMING Events JPortal API
-
-uses JPortal's mess menu API made by https://github.com/codeblech
-(https://github.com/J2V-k/jportal-vhost)
