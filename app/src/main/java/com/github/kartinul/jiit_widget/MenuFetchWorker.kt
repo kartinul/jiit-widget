@@ -10,8 +10,13 @@ import com.google.gson.Gson
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 
-private const val MENU_URL = "https://jportal2-0.vercel.app/mess_menu.json"
+private const val MENU_URL = "https://campos-fmjh.onrender.com/api/mess/weekly"
 
 class MenuFetchWorker(
     private val ctx: Context,
@@ -25,7 +30,34 @@ class MenuFetchWorker(
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 connection.inputStream.use { stream ->
                     InputStreamReader(stream).use { reader ->
-                        val response = Gson().fromJson(reader, MenuResponse::class.java)
+                        val apiResponse = Gson().fromJson(reader, ApiMenuResponse::class.java)
+                        
+                        // Transform ApiMenuResponse to MenuResponse
+                        val menuMap = mutableMapOf<String, DayMenu>()
+                        val today = LocalDate.now()
+                        // Assume the "weekly" menu is for the current week starting Monday
+                        val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                        
+                        val dateFormatter = DateTimeFormatter.ofPattern("EEEE dd.MM.yy", Locale.ENGLISH)
+                        
+                        apiResponse.weekly.forEach { item ->
+                            try {
+                                val dayOfWeek = DayOfWeek.valueOf(item.day.uppercase(Locale.ENGLISH))
+                                // Calculate the date for this day in the current week
+                                val date = monday.plusDays((dayOfWeek.value - DayOfWeek.MONDAY.value).toLong())
+                                val key = date.format(dateFormatter)
+                                
+                                menuMap[key] = DayMenu(
+                                    breakfast = item.breakfast,
+                                    lunch = item.lunch,
+                                    dinner = item.dinner
+                                )
+                            } catch (e: Exception) {
+                                Log.e("MenuFetchWorker", "Error parsing day: ${item.day}", e)
+                            }
+                        }
+
+                        val response = MenuResponse(menu = menuMap)
                         MenuCache.set(response, ctx)
 
                         // update widget
