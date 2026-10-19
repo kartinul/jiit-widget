@@ -1,8 +1,11 @@
 <resources>
-    <string name="app_name">jiit_widget</string>
-    <string name="mess_menu">hello</string>
-    <string name="time_of_meal">Breakfast: </string>
+    <string name="app_name">JIIT Widget</string>
     <string name="add_widget">Add widget</string>
-    <string name="app_widget_description">This is an app widget description</string>
-    <string name="refresh_menu">refresh menu</string>
+    <string name="app_widget_description">Shows the JIIT mess menu for the current meal.</string>
+    <string name="compact_view">Compact view</string>
+    <string name="compact_view_summary">Show only the main dishes</string>
+    <string name="refetching">Refetching</string>
+    <string name="menu_not_out">Menu not out yet</string>
+    <string name="next_meal">Show next meal</string>
+    <string name="current_meal">Show current meal</string>
 </resources>

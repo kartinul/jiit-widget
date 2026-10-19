@@ -3,3 +3,5 @@
 local.properties
 .artifacts
 template.json
+.DS_Store
+/build
