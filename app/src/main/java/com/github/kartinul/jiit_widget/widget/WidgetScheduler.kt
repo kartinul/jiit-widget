@@ -7,17 +7,21 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.github.kartinul.jiit_widget.data.Meal
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
 object WidgetScheduler {
     const val ACTION_TICK = "com.github.kartinul.jiit_widget.ACTION_TICK"
-    private val UPDATE_HOURS = listOf(0) + Meal.entries.map { it.endHour }
     private const val RETRY_HOURS = 2L
 
+    /** Midnight and each meal's end on [date], plus a few minutes of slack. */
+    private fun boundaries(date: LocalDate) =
+        (listOf(date.atStartOfDay()) + Meal.entries.map { it.endsAt(date) }).map { it.plusMinutes(4) }
+
     fun nextUpdate(now: LocalDateTime, menuMissing: Boolean): LocalDateTime {
-        val boundary = UPDATE_HOURS.map { now.toLocalDate().atTime(it, 4) }.firstOrNull { it.isAfter(now) }
-            ?: now.toLocalDate().plusDays(1).atTime(UPDATE_HOURS.first(), 4)
+        val boundary = boundaries(now.toLocalDate()).firstOrNull { it.isAfter(now) }
+            ?: boundaries(now.toLocalDate().plusDays(1)).first()
         return if (menuMissing) minOf(boundary, now.plusHours(RETRY_HOURS)) else boundary
     }
 

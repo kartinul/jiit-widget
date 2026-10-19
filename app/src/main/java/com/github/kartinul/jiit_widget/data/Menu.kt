@@ -5,12 +5,16 @@ import com.github.kartinul.jiit_widget.R
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
-enum class Meal(val title: String, val endHour: Int, @DrawableRes val icon: Int) {
-    BREAKFAST("Breakfast", 9, R.drawable.ic_breakfast),
-    LUNCH("Lunch", 14, R.drawable.ic_lunch),
-    DINNER("Dinner", 21, R.drawable.ic_dinner),
+enum class Meal(val title: String, private val end: LocalTime, private val sundayEnd: LocalTime, @DrawableRes val icon: Int) {
+    BREAKFAST("Breakfast", LocalTime.of(9, 0), LocalTime.of(9, 30), R.drawable.ic_breakfast),
+    LUNCH("Lunch", LocalTime.of(14, 0), LocalTime.of(14, 30), R.drawable.ic_lunch),
+    DINNER("Dinner", LocalTime.of(21, 30), LocalTime.of(21, 30), R.drawable.ic_dinner),
+    ;
+
+    fun endsAt(date: LocalDate): LocalDateTime = date.atTime(if (date.dayOfWeek == DayOfWeek.SUNDAY) sundayEnd else end)
 }
 
 data class MenuItem(val day: String?, val breakfast: String?, val lunch: String?, val dinner: String?)
@@ -42,7 +46,7 @@ fun nextMeal(now: LocalDateTime, menu: Map<String, MenuItem>): MealSlot {
 }
 
 private fun currentMeal(now: LocalDateTime): Pair<LocalDate, Meal> {
-    val meal = Meal.entries.firstOrNull { now.hour < it.endHour }
+    val meal = Meal.entries.firstOrNull { now.isBefore(it.endsAt(now.toLocalDate())) }
     return if (meal != null) now.toLocalDate() to meal else now.toLocalDate().plusDays(1) to Meal.BREAKFAST
 }
 
