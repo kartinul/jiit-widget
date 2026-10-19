@@ -33,12 +33,22 @@ class MenuTest {
         assertEquals(null, weekStart(null))
     }
 
-    @Test fun picksMealByHour() {
-        assertEquals("idli", mealAt(sunday.atTime(8, 59), menu).items)
-        assertEquals("chole", mealAt(sunday.atTime(9, 0), menu).items)
-        assertEquals("dal", mealAt(sunday.atTime(20, 0), menu).items)
-        assertEquals("Tomorrow's Breakfast", mealAt(sunday.atTime(21, 0), menu).title)
-        assertEquals(null, mealAt(sunday.atTime(21, 0), menu).items)
+    @Test fun picksMealByTime() {
+        assertEquals("idli", mealAt(sunday.atTime(9, 29), menu).items)
+        assertEquals("chole", mealAt(sunday.atTime(9, 30), menu).items)
+        assertEquals("chole", mealAt(sunday.atTime(14, 29), menu).items)
+        assertEquals("dal", mealAt(sunday.atTime(14, 30), menu).items)
+        assertEquals("dal", mealAt(sunday.atTime(21, 29), menu).items)
+        assertEquals("Tomorrow's Breakfast", mealAt(sunday.atTime(21, 30), menu).title)
+        assertEquals(null, mealAt(sunday.atTime(21, 30), menu).items)
+    }
+
+    @Test fun weekdaysEndEarlierExceptDinner() {
+        val monday = LocalDate.of(2026, 10, 12)
+        assertEquals("rajma", mealAt(monday.atTime(9, 0), menu).items)
+        assertEquals("paneer", mealAt(monday.atTime(14, 0), menu).items)
+        assertEquals("paneer", mealAt(monday.atTime(21, 29), menu).items)
+        assertEquals("Tomorrow's Breakfast", mealAt(monday.atTime(21, 30), menu).title)
     }
 
     @Test fun peeksNextMeal() {
@@ -60,12 +70,15 @@ class MenuTest {
         assertEquals(listOf("Chana - Poori", "Bread Jam", "Tea"), dishes("Chana - Poori, Bread Jam,  Tea,"))
 
     @Test fun schedulesNextBoundary() {
-        assertEquals(LocalDateTime.of(2026, 10, 18, 14, 4), WidgetScheduler.nextUpdate(sunday.atTime(9, 4), false))
+        assertEquals(LocalDateTime.of(2026, 10, 18, 9, 34), WidgetScheduler.nextUpdate(sunday.atTime(9, 4), false))
+        assertEquals(LocalDateTime.of(2026, 10, 18, 14, 34), WidgetScheduler.nextUpdate(sunday.atTime(9, 34), false))
+        assertEquals(LocalDateTime.of(2026, 10, 18, 21, 34), WidgetScheduler.nextUpdate(sunday.atTime(14, 34), false))
         assertEquals(LocalDateTime.of(2026, 10, 19, 0, 4), WidgetScheduler.nextUpdate(sunday.atTime(22, 0), false))
+        assertEquals(LocalDateTime.of(2026, 10, 19, 14, 4), WidgetScheduler.nextUpdate(LocalDate.of(2026, 10, 19).atTime(9, 4), false))
     }
 
     @Test fun retriesSoonerWhileMenuMissing() {
-        assertEquals(LocalDateTime.of(2026, 10, 18, 11, 4), WidgetScheduler.nextUpdate(sunday.atTime(9, 4), true))
-        assertEquals(LocalDateTime.of(2026, 10, 18, 14, 4), WidgetScheduler.nextUpdate(sunday.atTime(13, 0), true))
+        assertEquals(LocalDateTime.of(2026, 10, 18, 11, 34), WidgetScheduler.nextUpdate(sunday.atTime(9, 34), true))
+        assertEquals(LocalDateTime.of(2026, 10, 18, 14, 34), WidgetScheduler.nextUpdate(sunday.atTime(13, 0), true))
     }
 }
